@@ -15,8 +15,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Import tlintest here will create a global instance of the flow store
-import tlintest
+# Importing _FlowRecords here will create a global instance of the flow store
+import _FlowRecords
 
 # FlowRecords class to call the actual C extensions
 # Can think of this class as an intermediate layer whose job is to ensure
@@ -94,7 +94,7 @@ class FlowRecords(object):
         # Call setDefaults to parse out 'None's and replace with 0
         self._setDefaults(flowDict)
 
-        flowID = tlintest.insertFlow(**flowDict)
+        flowID = _FlowRecords.insertFlow(**flowDict)
         if flowID >= 0:
             #self._RECORDS[flowID] = dict(flowDict) # Deep copy
             pass
@@ -146,8 +146,9 @@ class FlowEntry(object):
     def reset(self):
         self.__init__()
 
+    # increment() is for testing multi-proc
     def increment(self):
-        tlintest.increment()
+        _FlowRecords.increment()
 
 
     """

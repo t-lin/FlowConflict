@@ -1,6 +1,7 @@
 # For compiling the C++ and Python libraries
 # Essentially same as using setup.py, but w/ O3 optimization
 
+MKFILE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 COMPILER_VERS_LEQ46 := $(shell echo "`g++ -dumpversion` <= 4.6" | bc)
 ifeq "$(COMPILER_VERS_LEQ46)" "1"
     STD = c++0x
@@ -23,12 +24,15 @@ build/FlowRecords.o: FlowRecords.cpp FlowRecords.h
 	g++ $(CFLAGS) -fPIC -c $< -o $@
 
 # TODO: Make this part more proper later... currently hard-coded af
-#pylib: FlowRecords.cpp tlintestmodule.cpp
-pylib: tlintestmodule.cpp FlowRecords.h clib
+pylib: pyFlowRecords.cpp FlowRecords.h clib
 	mkdir -p build
-	g++ $(CFLAGS) -fno-strict-aliasing -DNDEBUG -fwrapv -Wstrict-prototypes -fPIC -I/usr/include/python2.7 -c $< -o build/tlintestmodule.o
-	g++ -pthread -shared -Wl,-O3 -Wl,-Bsymbolic-functions -Wl,-Bsymbolic-functions -Wl,-z,relro build/tlintestmodule.o -lbitscan -L ./build -l flowrecords -o build/tlintest.so
-	ln -fs build/tlintest.so tlintest.so
+	g++ $(CFLAGS) -fno-strict-aliasing -DNDEBUG -fwrapv -Wstrict-prototypes -fPIC -I/usr/include/python2.7 -c $< -o $(MKFILE_DIR)build/pyFlowRecords.o
+	g++ -pthread -shared -Wl,-O3 -Wl,-Bsymbolic-functions -Wl,-Bsymbolic-functions -Wl,-z,relro build/pyFlowRecords.o -lbitscan -L $(MKFILE_DIR)build -l flowrecords -o $(MKFILE_DIR)build/pyFlowRecords.so
+
+	# By default, builds the library and tries to put a symlink in the global Python path
+	# If you do not have sudo access, switch the comment on the two lines below to put the symlink in the local directory
+	#ln -fs $(MKFILE_DIR)build/pyFlowRecords.so _FlowRecords.so
+	sudo ln -fs $(MKFILE_DIR)build/pyFlowRecords.so /usr/local/lib/python2.7/dist-packages/_FlowRecords.so
 
 ctest: test.cpp clib
 	g++ $(CFLAGS) $< -L ./build -l flowrecords -l bitscan -o $@
