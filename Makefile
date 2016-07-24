@@ -29,18 +29,20 @@ pylib: pyFlowRecords.cpp FlowRecords.h clib
 	g++ $(CFLAGS) -fno-strict-aliasing -DNDEBUG -fwrapv -Wstrict-prototypes -fPIC -I/usr/include/python2.7 -c $< -o $(MKFILE_DIR)build/pyFlowRecords.o
 	g++ -pthread -shared -Wl,-O3 -Wl,-Bsymbolic-functions -Wl,-Bsymbolic-functions -Wl,-z,relro build/pyFlowRecords.o -lbitscan -L $(MKFILE_DIR)build -l flowrecords -o $(MKFILE_DIR)build/pyFlowRecords.so
 
-	# By default, builds the library and tries to put a symlink in the global Python path
-	# If you do not have sudo access, switch the comment on the two lines below to put the symlink in the local directory
-	#ln -fs $(MKFILE_DIR)build/pyFlowRecords.so _FlowRecords.so
+install: pylib
+	# This requires sudo acccess to place symlinks into the global Python path
+	# If you do not have sudo access, open this Makefile and read further comments
+# If no sudo access is available, you should develop from within the main project directory
+#	1. Comment out the two active lines below
+#	2. Add the following line to put a symlink to the C extension module in the main project directory
+#		ln -fs $(MKFILE_DIR)build/pyFlowRecords.so $(MKFILE_DIR)_FlowRecords.so
+#	3. Save and exit this Makfile, then re-run 'make install'
 	sudo ln -fs $(MKFILE_DIR)build/pyFlowRecords.so /usr/local/lib/python2.7/dist-packages/_FlowRecords.so
-
-ctest: test.cpp clib
-	g++ $(CFLAGS) $< -L ./build -l flowrecords -l bitscan -o $@
+	sudo ln -fs $(MKFILE_DIR)FlowRecords.py /usr/local/lib/python2.7/dist-packages/FlowRecords.py
 
 clean:
 	rm -f *.o
 	rm -f *.a
 	rm -rf build
 	rm -f *.so
-	rm -f ctest
 

@@ -6,8 +6,8 @@ Then pass the relevant data to the C code to store / do conflict detection
 '''
 
 import time
-from FlowEntry import FlowEntry # Modified from Janus 2.0 code
-from FlowEntry import FlowRecords
+from FlowRecords import FlowEntry
+from FlowRecords import FlowRecords
 
 # NOTE: For this to work... assumes that the keys used in the match dictionary
 #       have the same as the FlowEntry member variables
@@ -114,7 +114,6 @@ flowFile.close();
 #print "number of flows stored: %s" % (flowCount - numConflicts) #len(flowRecords._RECORDS)
 #print "number of conflicts: %s" % numConflicts
 
-
 # Start pure conflict detection timing
 #print
 #print "Replaying input file for pure conflict detection"
@@ -154,4 +153,5 @@ for line in lineCache:
 print "conflict detection elapsed (time): %s" % (time.time() - startTime)
 #print "number of conflicts: %s" % numConflicts
 
-#wait = input("PRESS ENTER TO CONTINUE.")
+wait = raw_input("PRESS ENTER TO CONTINUE.")
+
