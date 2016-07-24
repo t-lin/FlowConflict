@@ -1,44 +1,13 @@
-/* TODO: Split into header and source files later */
 #include <iostream>
 #include <bitset>
 #include <cstdlib>
 #include <unordered_map>
 #include <ctime> /* Not sure how accurate this is compared to msec_timer...
                     ctime's clock() measures processor time used by program */
-#include "bitscan.h" // TODO: Fix bitscan header files to avoid including multiple times
+#include "bitscan.h"
+#include "FlowRecords.h"
 using namespace std;
 
-// For OF 1.0, 12 fields... thus 12 bitmaps
-#define NUM_OF_FIELDS 12
-
-// How large do we need the bit arrays to be?
-// Each bit in the array represents a flow in the table
-// Assume max table size of 512,000 (on par with largest BGP tables today)
-//#define ARRAY_SIZE 16000
-//#define ARRAY_SIZE 32000
-//#define ARRAY_SIZE 64000
-//#define ARRAY_SIZE 128000
-//#define ARRAY_SIZE 256000
-#define ARRAY_SIZE 512000
-//#define ARRAY_SIZE 1024000
-
-typedef struct {
-    unsigned long long dpid;
-    unsigned short in_port;
-    //unsigned char dl_dst[6];
-    //unsigned char dl_src[6];
-    unsigned long long dl_dst; // Using long long wastes 2 bytes
-    unsigned long long dl_src; // Using long long wastes 2 bytes
-    unsigned short dl_type;
-    unsigned short dl_vlan;
-    unsigned char dl_vlan_pcp;
-    unsigned int nw_src;
-    unsigned int nw_dst;
-    unsigned char nw_proto;
-    unsigned char nw_tos;
-    unsigned short tp_src;
-    unsigned short tp_dst;
-} FlowEntry;
 
 /* ========== HELPER FUNCTIONS ========== */
 unsigned long get_time_in_ms()
@@ -52,17 +21,6 @@ void one_sec_delay()
 
     while(get_time_in_ms() < end_time);
 }
-
-//void populateRandomBits(bitarray &array) {
-//    srand(get_time_in_ms());
-//    //cout << "array size is: " << array.size() << endl;
-//
-//    array.set_bbindex(0);
-//    array.set_posbit(0);
-//    for (int i = 0; i < array.size(); i++) {
-//        array.set_next_bit(rand() % 2);
-//    }
-//}
 
 // Performs lhs &= rhs
 void manualMasking(BITBOARD *lhs, BITBOARD *rhs, int numBlocks) {
@@ -85,76 +43,25 @@ void printFlowEntry(const FlowEntry &flow) {
     return;
 }
 
-/* ========== FlowRecords CLASS DEFINITION ========== */
-class myGlobalClass {
-    private:
-        /* ===== MEMBER VARIABLES ===== */
-        int mHiddenInt; // tlintest
+template <typename T_UMAP, typename T_KEY>
+inline void AND_matchingFlows(T_UMAP &map, T_KEY &key, bitarray &result, bitarray &tmp) {
+    auto iter = map.find(key);
+    if (iter != map.end())
+        result &= OR(iter->second, map[0], tmp);
+    else
+        result &= map[0];
 
-        unordered_map<unsigned long long, bitarray> dpid_map;
-        unordered_map<unsigned short, bitarray> in_port_map;
-        unordered_map<unsigned long long, bitarray> dl_dst_map;
-        unordered_map<unsigned long long, bitarray> dl_src_map;
-        unordered_map<unsigned short, bitarray> dl_type_map;
-        unordered_map<unsigned short, bitarray> dl_vlan_map;
-        unordered_map<unsigned char, bitarray> dl_vlan_pcp_map;
-        unordered_map<unsigned int, bitarray> nw_src_map;
-        unordered_map<unsigned int, bitarray> nw_dst_map;
-        unordered_map<unsigned char, bitarray> nw_proto_map;
-        unordered_map<unsigned char, bitarray> nw_tos_map;
-        unordered_map<unsigned short, bitarray> tp_src_map;
-        unordered_map<unsigned short, bitarray> tp_dst_map;
-
-        // Reverse lookup of flow ID -> flow entry
-        unordered_map<unsigned int, FlowEntry> flowLookup;
-
-        /* Available indices (basically IDs) to assign to a new flow
-         * If bit is 1, then that index is available for use
-         */
-        bitarray mIndexInventory;
-
-        /* Ensure bitarray has been initialized
-         * If it has been initialized, do nothing
-         * Else, initialize it
-         */
-        bitarray &checkArrayInit(bitarray &array);
-
-        /* Initialize bit arrays for a flow's field values */
-        //void initFlowBitArrays(const FlowEntry &flow)
-
-        /* Returns the first available index (a 1 bit) in mIndexInventory */
-        int nextFreeIndex();
-
-        bitarray &getConflicts(const FlowEntry &flow);
-
-        bool conflictExists(const FlowEntry &flow, const bool &printConflicts = false);
-
-        bool atLeastOneWild(const FlowEntry &flow);
-
-    public:
-        myGlobalClass();
-
-        ~myGlobalClass() {};
-
-        unsigned int numFlows();
-
-        // Returns flowID if succcessful, -1 on error
-        int insertFlow(const FlowEntry &flow, bool printConflicts = false);
-
-        // For now always returns 0...
-        int removeFlow(const int &flowID);
-
-        void increment(); // test only
-};
+    return;
+}
 
 /* ========== FlowRecords MEMBER FUNCTION DEFINITIONS ========== */
-// increment() for testing only, remove later?
-void myGlobalClass::increment() {
+// increment() for testing of multi-process, remove later?
+void FlowRecords::increment() {
     cout << "mHiddenInt = " << ++mHiddenInt << endl;
     return;
 }
 
-myGlobalClass::myGlobalClass() {
+FlowRecords::FlowRecords() {
     mHiddenInt = 0;
     mIndexInventory.init(ARRAY_SIZE);
     mIndexInventory.set_bit(0, ARRAY_SIZE - 1);
@@ -176,13 +83,17 @@ myGlobalClass::myGlobalClass() {
     tp_dst_map[0].init(ARRAY_SIZE, true);
 }
 
-inline unsigned int myGlobalClass::numFlows() {
+/* Returns number of flows stored */
+inline unsigned int FlowRecords::numFlows() {
     // The number of 0's in the index inventory
     return (ARRAY_SIZE - mIndexInventory.popcn64());
 }
 
-// Returns reference to same array object passed in
-inline bitarray &myGlobalClass::checkArrayInit(bitarray &array) {
+/* Ensure bitarray has been initialized
+ * If it has been initialized, do nothing
+ * Else, initialize it
+ */
+inline bitarray &FlowRecords::checkArrayInit(bitarray &array) {
     if (array.get_bitstring() == NULL) {
         array.init(ARRAY_SIZE, true);
     }
@@ -190,14 +101,18 @@ inline bitarray &myGlobalClass::checkArrayInit(bitarray &array) {
     return array;
 }
 
-// Return index of first available bit (first 1 bit)
-// Returns -1 if not found
-inline int myGlobalClass::nextFreeIndex() {
+/* Returns the first available index (a 1 bit) in mIndexInventory
+ * Returns -1 if no available index is found
+ */
+inline int FlowRecords::nextFreeIndex() {
     mIndexInventory.init_scan(bbo::NON_DESTRUCTIVE);
     return mIndexInventory.next_bit();
 }
 
-inline bool myGlobalClass::atLeastOneWild(const FlowEntry &flow) {
+/* Returns True if there is at least one field which is a wildcard
+ * Otherwise, returns False
+ */
+inline bool FlowRecords::atLeastOneWild(const FlowEntry &flow) {
     return ( (flow.dpid == 0) || (flow.in_port == 0) || (flow.dl_dst == 0) || (flow.dl_src == 0) ||
                 (flow.dl_type == 0) || (flow.dl_vlan == 0) || (flow.dl_vlan_pcp == 0) ||
                 (flow.nw_src == 0) || (flow.nw_dst == 0) || (flow.nw_proto == 0) ||
@@ -215,63 +130,79 @@ inline bool myGlobalClass::atLeastOneWild(const FlowEntry &flow) {
  *  - Bit-wise AND the resulting bitarray for each field
  *  - Returns reference to bitarray where 1-bits represent the flow ID index for conflicting flows
  */
-bitarray &myGlobalClass::getConflicts(const FlowEntry &flow) {
+bitarray &FlowRecords::getConflicts(const FlowEntry &flow) {
     static bitarray result(ARRAY_SIZE), tmp(ARRAY_SIZE), allFlows(ARRAY_SIZE);
 
-    OR(checkArrayInit(dpid_map[flow.dpid]), dpid_map[0], result);
+    //OR(checkArrayInit(dpid_map[flow.dpid]), dpid_map[0], result);
+    // Having this code here explicitly initializes 'result' and avoids copying from 'tmp'
+    auto dpid_iter = dpid_map.find(flow.dpid);
+    if ( dpid_iter != dpid_map.end() )
+        OR(dpid_iter->second, dpid_map[0], result);
+    else
+        result = dpid_map[0];
 
-    /* TODO: Figure out a way to do this more elegantly
-     *      If map[flow.field] doesn't exist, no need to instantiate the bitarray
-     *      object or allocate a bitarray for it... this wastes time and memory
+    /* For each field, the following operation will be performed (using in_port as an example):
+     *      result = result & ( tmp = (in_port_map[flow.in_port] | in_port_map[0]) )
      */
-    if (flow.in_port != 0)
-        // Implements: result = result & ( tmp = (in_port_map[flow.in_port] | in_port_map[0]) )
-        //result &= OR(in_port_map[flow.in_port], in_port_map[0], tmp);
-        result &= OR(checkArrayInit(in_port_map[flow.in_port]), in_port_map[0], tmp);
+    if (flow.in_port != 0) {
+        AND_matchingFlows(in_port_map, flow.in_port, result, tmp);
+        //result &= OR(checkArrayInit(in_port_map[flow.in_port]), in_port_map[0], tmp);
+    }
 
-    if (flow.dl_dst != 0)
-        //result &= OR(dl_dst_map[flow.dl_dst], dl_dst_map[0], tmp);
-        result &= OR(checkArrayInit(dl_dst_map[flow.dl_dst]), dl_dst_map[0], tmp);
+    if (flow.dl_dst != 0) {
+        AND_matchingFlows(dl_dst_map, flow.dl_dst, result, tmp);
+        //result &= OR(checkArrayInit(dl_dst_map[flow.dl_dst]), dl_dst_map[0], tmp);
+    }
 
-    if (flow.dl_src != 0)
-        //result &= OR(dl_src_map[flow.dl_src], dl_src_map[0], tmp);
-        result &= OR(checkArrayInit(dl_src_map[flow.dl_src]), dl_src_map[0], tmp);
+    if (flow.dl_src != 0) {
+        AND_matchingFlows(dl_src_map, flow.dl_src, result, tmp);
+        //result &= OR(checkArrayInit(dl_src_map[flow.dl_src]), dl_src_map[0], tmp);
+    }
 
-    if (flow.dl_type != 0)
-        //result &= OR(dl_type_map[flow.dl_type], dl_type_map[0], tmp);
-        result &= OR(checkArrayInit(dl_type_map[flow.dl_type]), dl_type_map[0], tmp);
+    if (flow.dl_type != 0) {
+        AND_matchingFlows(dl_type_map, flow.dl_type, result, tmp);
+        //result &= OR(checkArrayInit(dl_type_map[flow.dl_type]), dl_type_map[0], tmp);
+    }
 
-    if (flow.dl_vlan != 0)
-        //result &= OR(dl_vlan_map[flow.dl_vlan], dl_vlan_map[0], tmp);
-        result &= OR(checkArrayInit(dl_vlan_map[flow.dl_vlan]), dl_vlan_map[0], tmp);
+    if (flow.dl_vlan != 0) {
+        AND_matchingFlows(dl_vlan_map, flow.dl_vlan, result, tmp);
+        //result &= OR(checkArrayInit(dl_vlan_map[flow.dl_vlan]), dl_vlan_map[0], tmp);
+    }
 
-    if (flow.dl_vlan_pcp != 0)
-        //result &= OR(dl_vlan_pcp_map[flow.dl_vlan_pcp], dl_vlan_pcp_map[0], tmp);
-        result &= OR(checkArrayInit(dl_vlan_pcp_map[flow.dl_vlan_pcp]), dl_vlan_pcp_map[0], tmp);
+    if (flow.dl_vlan_pcp != 0) {
+        AND_matchingFlows(dl_vlan_pcp_map, flow.dl_vlan_pcp, result, tmp);
+        //result &= OR(checkArrayInit(dl_vlan_pcp_map[flow.dl_vlan_pcp]), dl_vlan_pcp_map[0], tmp);
+    }
 
-    if (flow.nw_src != 0)
-        //result &= OR(nw_src_map[flow.nw_src], nw_src_map[0], tmp);
-        result &= OR(checkArrayInit(nw_src_map[flow.nw_src]), nw_src_map[0], tmp);
+    if (flow.nw_src != 0) {
+        AND_matchingFlows(nw_src_map, flow.nw_src, result, tmp);
+        //result &= OR(checkArrayInit(nw_src_map[flow.nw_src]), nw_src_map[0], tmp);
+    }
 
-    if (flow.nw_dst != 0)
-        //result &= OR(nw_dst_map[flow.nw_dst], nw_dst_map[0], tmp);
-        result &= OR(checkArrayInit(nw_dst_map[flow.nw_dst]), nw_dst_map[0], tmp);
+    if (flow.nw_dst != 0) {
+        AND_matchingFlows(nw_dst_map, flow.nw_dst, result, tmp);
+        //result &= OR(checkArrayInit(nw_dst_map[flow.nw_dst]), nw_dst_map[0], tmp);
+    }
 
-    if (flow.nw_proto != 0)
-        //result &= OR(nw_proto_map[flow.nw_proto], nw_proto_map[0], tmp);
-        result &= OR(checkArrayInit(nw_proto_map[flow.nw_proto]), nw_proto_map[0], tmp);
+    if (flow.nw_proto != 0) {
+        AND_matchingFlows(nw_proto_map, flow.nw_proto, result, tmp);
+        //result &= OR(checkArrayInit(nw_proto_map[flow.nw_proto]), nw_proto_map[0], tmp);
+    }
 
-    if (flow.nw_tos != 0)
-        //result &= OR(nw_tos_map[flow.nw_tos], nw_tos_map[0], tmp);
-        result &= OR(checkArrayInit(nw_tos_map[flow.nw_tos]), nw_tos_map[0], tmp);
+    if (flow.nw_tos != 0) {
+        AND_matchingFlows(nw_tos_map, flow.nw_tos, result, tmp);
+        //result &= OR(checkArrayInit(nw_tos_map[flow.nw_tos]), nw_tos_map[0], tmp);
+    }
 
-    if (flow.tp_src != 0)
-        //result &= OR(tp_src_map[flow.tp_src], tp_src_map[0], tmp);
-        result &= OR(checkArrayInit(tp_src_map[flow.tp_src]), tp_src_map[0], tmp);
+    if (flow.tp_src != 0) {
+        AND_matchingFlows(tp_src_map, flow.tp_src, result, tmp);
+        //result &= OR(checkArrayInit(tp_src_map[flow.tp_src]), tp_src_map[0], tmp);
+    }
 
-    if (flow.tp_dst != 0)
-        //result &= OR(tp_dst_map[flow.tp_dst], tp_dst_map[0], tmp);
-        result &= OR(checkArrayInit(tp_dst_map[flow.tp_dst]), tp_dst_map[0], tmp);
+    if (flow.tp_dst != 0) {
+        AND_matchingFlows(tp_dst_map, flow.tp_dst, result, tmp);
+        //result &= OR(checkArrayInit(tp_dst_map[flow.tp_dst]), tp_dst_map[0], tmp);
+    }
 
     if (atLeastOneWild(flow)) {
         // Wildcarded field would result in match w/ all flows
@@ -282,8 +213,11 @@ bitarray &myGlobalClass::getConflicts(const FlowEntry &flow) {
     return result;
 }
 
-
-bool myGlobalClass::conflictExists(const FlowEntry &flow, const bool &printConflicts) {
+/* Returns True if the specified flow conflicts with an existing flow entry
+ * Othewise, returns False
+ * Optional parameter: printConflicts for printing any conflicting flows identified
+ */
+bool FlowRecords::conflictExists(const FlowEntry &flow, const bool &printConflicts) {
     bitarray result = getConflicts(flow);
     bool bConflict = result.popcn64();
 
@@ -300,7 +234,7 @@ bool myGlobalClass::conflictExists(const FlowEntry &flow, const bool &printConfl
 
 // Returns assigned flow ID on success
 // Returns -1 on failure
-int myGlobalClass::insertFlow(const FlowEntry &flow, bool printConflicts) {
+int FlowRecords::insertFlow(const FlowEntry &flow, bool printConflicts) {
 
     // Do conflict detection here
     if (conflictExists(flow, printConflicts))
@@ -335,9 +269,7 @@ int myGlobalClass::insertFlow(const FlowEntry &flow, bool printConflicts) {
 }
 
 // This should really be a void... since set and erase bit functions are voids
-int myGlobalClass::removeFlow(const int &flowID) {
-    // to do: create reverse-lookup table in insertFlow
-    //  - flow-id map to list of pointers to the bitarrays??
+int FlowRecords::removeFlow(const int &flowID) {
     if (mIndexInventory.is_bit(flowID)) {
         FlowEntry flow = move(flowLookup[flowID]);
 

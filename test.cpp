@@ -6,9 +6,9 @@
 #include <unordered_map>
 #include <ctime> /* Not sure how accurate this is compared to msec_timer...
                     ctime's clock() measures processor time used by program */
-//#include "bitscan.h"
+#include "bitscan.h"
 
-#include "FlowRecords.cpp"
+#include "FlowRecords.h"
 using namespace std;
 
 // How large do we need the bit arrays to be?
@@ -47,7 +47,7 @@ using namespace std;
 
 int main()
 {
-    myGlobalClass test;
+    FlowRecords test;
 
     test.increment();
 

@@ -18,21 +18,25 @@ clib: build/libflowrecords.a
 build/libflowrecords.a: build/FlowRecords.o
 	ar rcs $@ $^
 
-build/FlowRecords.o: FlowRecords.cpp
+build/FlowRecords.o: FlowRecords.cpp FlowRecords.h
 	mkdir -p build
 	g++ $(CFLAGS) -fPIC -c $< -o $@
 
 # TODO: Make this part more proper later... currently hard-coded af
 #pylib: FlowRecords.cpp tlintestmodule.cpp
-pylib: tlintestmodule.cpp clib
+pylib: tlintestmodule.cpp FlowRecords.h clib
 	mkdir -p build
 	g++ $(CFLAGS) -fno-strict-aliasing -DNDEBUG -fwrapv -Wstrict-prototypes -fPIC -I/usr/include/python2.7 -c $< -o build/tlintestmodule.o
 	g++ -pthread -shared -Wl,-O3 -Wl,-Bsymbolic-functions -Wl,-Bsymbolic-functions -Wl,-z,relro build/tlintestmodule.o -lbitscan -L ./build -l flowrecords -o build/tlintest.so
 	ln -fs build/tlintest.so tlintest.so
 
+ctest: test.cpp clib
+	g++ $(CFLAGS) $< -L ./build -l flowrecords -l bitscan -o $@
+
 clean:
-	rm *.o
-	rm *.a
+	rm -f *.o
+	rm -f *.a
 	rm -rf build
-	rm *.so
+	rm -f *.so
+	rm -f ctest
 
